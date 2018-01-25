@@ -1,5 +1,5 @@
 local validate_entity = require("kong.dao.schemas_validation").validate_entity
-local oauth2_schema = require "kong.plugins.oauth2.schema"
+local oauth2_schema = require "kong.plugins.oauth2-custom.schema"
 
 describe("Plugin: oauth2 (schema)", function()
   it("does not require `scopes` when `mandatory_scope` is false", function()

@@ -5,8 +5,10 @@ local constants = require "kong.constants"
 local timestamp = require "kong.tools.timestamp"
 local singletons = require "kong.singletons"
 local public_utils = require "kong.tools.public"
+local putils = require "kong.plugins.auth-providers-util.utils"
 
 local string_find = string.find
+local string_gmatch = string.gmatch
 local req_get_headers = ngx.req.get_headers
 local ngx_set_header = ngx.req.set_header
 local check_https = utils.check_https
@@ -114,6 +116,33 @@ local function retrieve_scopes(parameters, conf)
   end
 
   return true, scopes
+end
+
+-- Handle get requests for authorization code grant type with third party IdP.
+local function authorizeget(conf, uri)
+  local response_params = {}
+  for name in string_gmatch(uri, "/oauth2/authorize/(%w+)") do
+    provider_name = name
+    break
+  end
+
+-- check provider
+  local provider_cache_key = singletons.dao.auth_providers:cache_key(provider_name)
+  local provider, err = singletons.cache:get(provider_cache_key, nil,
+                                              putils.load_provider,
+                                              provider_name)
+  if err then
+    return responses.send_HTTP_INTERNAL_SERVER_ERROR(err)
+  end
+  if not provider then
+    return responses.send_HTTP_BAD_REQUEST("no provider found.")
+  end
+
+-- take action by provider type
+  local pmodule = putils.moduleof(provider.provider_type)
+  if pmodule then
+    pmodule.execute(conf, provider)
+  end
 end
 
 local function authorize(conf)
@@ -535,8 +564,15 @@ function _M.execute(conf)
     return
   end
 
-  if ngx.req.get_method() == "POST" then
-    local uri = ngx.var.uri
+  local http_method = ngx.req.get_method()
+  local uri = ngx.var.uri
+  if http_method == "GET" then
+    local from, _ = string_find(uri, "/oauth2/authorize/%w+", nil, true)
+
+    if from then
+      authorizeget(conf, uri)
+    end
+  elseif http_method == "POST" then
 
     local from, _ = string_find(uri, "/oauth2/token", nil, true)
 

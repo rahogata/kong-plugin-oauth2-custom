@@ -31,7 +31,7 @@ local OAUTH2_CREDENTIALS_SCHEMA = {
     client_secret = { type = "string", required = false, default = utils.random_string },
     redirect_uri = { type = "array", required = true, func = validate_uris },
     created_at = { type = "timestamp", immutable = true, dao_insert_value = true }
-  },
+  }
 }
 
 local OAUTH2_AUTHORIZATION_CODES_SCHEMA = {
@@ -64,11 +64,25 @@ local OAUTH2_TOKENS_SCHEMA = {
     authenticated_userid = { type = "string", required = false },
     scope = { type = "string" },
     created_at = { type = "timestamp", immutable = true, dao_insert_value = true }
-  },
+  }
+}
+
+local AUTH_PROVIDERS = {
+  primary_key = { "id" },
+  table = "auth_providers",
+  cache_key = { "name" },
+  fields = {
+    id = { type = "id", dao_insert_value = true },
+    name = { type = "string", required = true, unique = true },
+    provider_type = { type = "string", required = true },
+    config = { type = "table", required = true },
+    created_at = { type = "timestamp", immutable = true, dao_insert_value = true }
+  }
 }
 
 return {
   oauth2_credentials = OAUTH2_CREDENTIALS_SCHEMA,
   oauth2_authorization_codes = OAUTH2_AUTHORIZATION_CODES_SCHEMA,
-  oauth2_tokens = OAUTH2_TOKENS_SCHEMA
+  oauth2_tokens = OAUTH2_TOKENS_SCHEMA,
+  auth_providers = AUTH_PROVIDERS
 }
