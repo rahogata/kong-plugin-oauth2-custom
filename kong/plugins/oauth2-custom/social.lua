@@ -12,6 +12,8 @@ local CLIENT_ID = "client_id"
 local REDIRECT_URI = "redirect_uri"
 local SCOPE = "scope"
 local STATE = "state"
+local ACCESS_DENIED = "access_denied"
+local SERVER_ERROR = "server_error"
 
 local function load_oauth2_credential_by_client_id_into_memory(client_id)
   local credentials, err = singletons.dao.oauth2_credentials:find_all {client_id = client_id}
@@ -51,8 +53,11 @@ local function retrieve_scopes(parameters, conf)
   return true, scopes
 end
 
+--__-__-__-__-___-___-__-__-__-__-___-__-___-__-__-                   -___-__-__-__-___-___-__-__-__-__-___-__-___-__
+----------------------------------------------------AUTHORIZATION CODE-----------------------------------------------
 function _M.execute(conf, provider)
 
+  local response_params = {}
   local parameters = putils.retrieve_parameters()
   local response_type = parameters[RESPONSE_TYPE]
   -- Check response_type
@@ -97,6 +102,66 @@ function _M.execute(conf, provider)
     ["pragma"] = "no-cache"
   })
 
+end
+
+--__-__-__-__-___-___-__-__-__-__-___-__-___-__-__-         -__-__-__-__-__-__-__-__-___-__-__-__-__-__-___
+----------------------------------------------------CALLBACK-----------------------------------------------
+local function invalidate_session(parameters)
+  singletons.cache:invalidate(parameters[STATE])
+end
+
+function _M.callback(conf)
+
+  local parameters = putils.retrieve_parameters()
+  if parameters[STATE] then
+    local state, err = singletons.cache:get(parameters[STATE], nil,
+                      putils.load_new_session_state,
+                      nil)
+    if err then
+      return responses.send_HTTP_INTERNAL_SERVER_ERROR(err)
+    end
+
+    if state then
+      local res
+      if parameters[CODE] then
+
+        local api_id
+        if not conf.global_credentials then
+          api_id = state.api_id
+        end
+        local authorization_code, err = singletons.dao.oauth2_authorization_codes:insert({
+              api_id = api_id,
+              credential_id = state.client_id,
+              authenticated_userid = parameters[CODE],
+              scope = table.concat(state.scopes, " ")
+             }, {ttl = 300})
+
+        if err then
+          res = "error=" .. SERVER_ERROR
+        else
+          res = "code=" .. authorization_code.code
+        end
+      else
+        res = "error=" .. ACCESS_DENIED
+      end
+      invalidate_session(parameters)
+      return ngx.redirect(state.redirect_url .. "?" .. res .. (state.client_state and "&state=" .. state.client_state or ""))
+    end
+  end
+  return responses.send_HTTP_BAD_REQUEST({ [ERROR] = "access_denied" })
+end
+
+--__-__-__-__-___-___-__-__-__-__-___-__-___-__-__-          -__-__-__-__-__-__-__-__-___-__-__-__-__-__-___
+---------------------------------------------------VALIDATION-----------------------------------------------
+function _M.validate_config(conf)
+  if not conf then
+    return false, "No configuration found."
+  end
+  if not conf.client_id or not conf.client_secret or not conf.scopes or next(conf.scopes) == nil
+      or not conf.authorization_uri or not conf.token_uri or not conf.profile_uri or not conf.callback_url then
+     return false, "Invalid request."
+  end
+  return putils.validate_uris({ conf.authorization_uri, conf.token_uri, conf.profile_uri, conf.callback_url })
 end
 
 return _M

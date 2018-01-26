@@ -5,7 +5,8 @@ local constants = require "kong.constants"
 local timestamp = require "kong.tools.timestamp"
 local singletons = require "kong.singletons"
 local public_utils = require "kong.tools.public"
-local putils = require "kong.plugins.auth-providers-util.utils"
+local putils = require "kong.plugins.oauth2-custom.utils"
+local pfactory = require "kong.plugins.oauth2-custom.pfactory"
 
 local string_find = string.find
 local string_gmatch = string.gmatch
@@ -35,6 +36,7 @@ local GRANT_REFRESH_TOKEN = "refresh_token"
 local GRANT_PASSWORD = "password"
 local ERROR = "error"
 local AUTHENTICATED_USERID = "authenticated_userid"
+local SOCIALCALLBACK = "social/callback"
 
 local function generate_token(conf, api, credential, authenticated_userid, scope, state, expiration, disable_refresh)
   local token_expiration = expiration or conf.token_expiration
@@ -120,7 +122,7 @@ end
 
 -- Handle get requests for authorization code grant type with third party IdP.
 local function authorizeget(conf, uri)
-  local response_params = {}
+  local provider_name
   for name in string_gmatch(uri, "/oauth2/authorize/(%w+)") do
     provider_name = name
     break
@@ -139,9 +141,34 @@ local function authorizeget(conf, uri)
   end
 
 -- take action by provider type
-  local pmodule = putils.moduleof(provider.provider_type)
+  local pmodule = pfactory.moduleof(provider.provider_type)
   if pmodule then
     pmodule.execute(conf, provider)
+  end
+end
+
+local function callback(conf, uri)
+  local provider_name
+  for v in string_gmatch(uri, "/oauth2/callback/(%w+)") do
+    provider_name = v
+    break
+  end
+
+-- check provider
+  local provider_cache_key = singletons.dao.auth_providers:cache_key(provider_name)
+  local provider, err = singletons.cache:get(provider_cache_key, nil,
+                                              putils.load_provider,
+                                              provider_name)
+  if err then
+    return responses.send_HTTP_INTERNAL_SERVER_ERROR(err)
+  end
+  if not provider then
+    return responses.send_HTTP_BAD_REQUEST("no provider found.")
+  end
+
+  local pmodule = pfactory.moduleof(provider.provider_type)
+  if pmodule then
+    pmodule.callback(conf)
   end
 end
 
@@ -567,13 +594,20 @@ function _M.execute(conf)
   local http_method = ngx.req.get_method()
   local uri = ngx.var.uri
   if http_method == "GET" then
-    local from, _ = string_find(uri, "/oauth2/authorize/%w+", nil, true)
+    local from, _ = string_find(uri, "/oauth2/callback/%w+", nil, false)
 
     if from then
-      authorizeget(conf, uri)
-    end
-  elseif http_method == "POST" then
+      callback(conf, uri)
 
+    else
+      from, _ = string_find(uri, "/oauth2/authorize/%w+", nil, false)
+
+      if from then
+        authorizeget(conf, uri)
+      end
+    end
+
+  elseif http_method == "POST" then
     local from, _ = string_find(uri, "/oauth2/token", nil, true)
 
     if from then

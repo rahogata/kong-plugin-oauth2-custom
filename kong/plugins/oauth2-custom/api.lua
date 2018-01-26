@@ -1,4 +1,16 @@
 local crud = require "kong.api.crud_helpers"
+local pfactory = require "kong.plugins.oauth2-custom.pfactory"
+
+local function validateconfig(self, dao_factory, helpers)
+  local pmodule = pfactory.moduleof(self.params.provider_type)
+  if not pmodule then
+    return helpers.responses.send_HTTP_BAD_REQUEST("Invalid provider type")
+  end
+  local ok, err = pmodule.validate_config(self.params.config)
+  if not ok then
+    helpers.responses.send_HTTP_BAD_REQUEST(err)
+  end
+end
 
 return {
   ["/oauth2_tokens/"] = {
@@ -104,6 +116,47 @@ return {
 
     DELETE = function(self, dao_factory)
       crud.delete(self.oauth2_credential, dao_factory.oauth2_credentials)
+    end
+  },
+
+  ["/oauth2-custom/auth_providers/"] = {
+    GET = function(self, dao_factory)
+      crud.paginated_set(self, dao_factory.auth_providers)
+    end,
+
+    PUT = function(self, dao_factory, helpers)
+      validateconfig(self, dao_factory, helpers)
+      crud.put(self.params, dao_factory.auth_providers)
+    end,
+
+    POST = function(self, dao_factory, helpers)
+      validateconfig(self, dao_factory, helpers)
+      crud.post(self.params, dao_factory.auth_providers)
+    end
+  },
+
+  ["/oauth2-custom/auth_providers/:name"] = {
+    before = function(self, dao_factory, helpers)
+      local providers, err = crud.find_by_id_or_field(
+        dao_factory.auth_providers,
+        nil,
+        self.params.name,
+        "name")
+
+      if err then
+        return helpers.yield_error(err)
+      elseif next(providers) == nil then
+        return helpers.responses.send_HTTP_NOT_FOUND()
+      end
+      self.provider = providers[1]
+    end,
+
+    GET = function(self, dao_factory, helpers)
+      return helpers.responses.send_HTTP_OK(self.provider)
+    end,
+
+    DELETE = function(self, dao_factory)
+      crud.delete(self.provider, dao_factory.auth_providers)
     end
   }
 }

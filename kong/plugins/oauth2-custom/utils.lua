@@ -1,35 +1,7 @@
 local singletons = require "kong.singletons"
-local social = require "kong.plugins.oauth2-custom.social"
+local url = require "socket.url"
 
 local _M = {}
-
-local SOCIAL = "SOCIAL"
-
-function _M.get_providers(provider_type)
-  local providers = {}
-  local provider_entities = singletons.dao.auth_providers:find_all({ provider_type = provider_type })
-  for i, v in ipairs(provider_entities) do
-    table.insert(providers, { name = v.name, method = v.method, uri = v.uri .. v.name, response_type = v.response_type })
-  end
-  return providers
-end
-
-function _M.list_merge(a, b)
-  local temp
-  if not a then
-    a = {}
-  end
-  if not b then
-    b = {}
-  end
-  if #a > #b then
-    temp = a
-    a = b
-    b = temp
-  end
-  for i, v in ipairs(a) do table.insert(b, v) end
-  return b
-end
 
 function _M.retrieve_parameters()
   return ngx.req.get_uri_args()
@@ -47,11 +19,23 @@ function _M.load_provider(provider_name)
     return provider
 end
 
-function _M.moduleof(provider_type)
-  if provider_type == SOCIAL then
-    return social
+function _M.validate_uris(v)
+  if v then
+    if #v == 0 then
+      return false, "Invalid request."
+    end
+    for _, uri in ipairs(v) do
+      local parsed_uri = url.parse(uri)
+      if not (parsed_uri and parsed_uri.host and parsed_uri.scheme) then
+        return false, "cannot parse '" .. uri .. "'"
+      end
+      if parsed_uri.fragment ~= nil then
+        return false, "fragment not allowed in '" .. uri .. "'"
+      end
+    end
+    return true, nil
   end
-  return nil
+  return false, "Invalid uri found in the configuration."
 end
 
 return _M
