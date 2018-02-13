@@ -15,7 +15,7 @@ source = {
 }
 
 description = {
-  summary = "A plugin to support external authentication for generating oauth2 token.",
+  summary = "A plugin to support various authentication mechanism like OTP, LDAP, Basic, JDBC etc, for generating oauth2 token.",
   homepage = "http://rahogata.co.in",
   license = "MIT"
 }
@@ -33,6 +33,7 @@ build = {
     ["kong.plugins."..pluginName..".cassandra"] = "kong/plugins/"..pluginName.."/migrations/cassandra.lua",
     ["kong.plugins."..pluginName..".handler"] = "kong/plugins/"..pluginName.."/handler.lua",
     ["kong.plugins."..pluginName..".schema"] = "kong/plugins/"..pluginName.."/schema.lua",
+-- modules specially for authentication.	
     ["kong.plugins."..pluginName..".social"] = "kong/plugins/"..pluginName.."/social.lua",
     ["kong.plugins."..pluginName..".utils"] = "kong/plugins/"..pluginName.."/utils.lua",
     ["kong.plugins."..pluginName..".pfactory"] = "kong/plugins/"..pluginName.."/pfactory.lua"
